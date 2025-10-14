@@ -4,6 +4,7 @@ module suipin::raffle;
 
 use std::{
     string::{String},
+    type_name::{Self, TypeName},
 };
 use sui::{
     clock::{Clock},
@@ -21,6 +22,8 @@ const ENotOwner: u64 = 0;
 const ENotEnoughTickets: u64 = 1;
 const EWrongRaffleTicket: u64 = 2;
 const EInvalidState: u64 = 3;
+const EInvalidNftOwnCondition: u64 = 4;
+const EInvalidNftType: u64 = 5;
 
 // === Structs ===
 
@@ -31,6 +34,7 @@ public struct Raffle<phantom Currency> has key {
     min_ticket_count: u64,
     tickets: TableVec<ID>,
     reward: Balance<Currency>,
+    nft_types: vector<TypeName>,
 }
 
 public enum RaffleState has copy, drop, store {
@@ -57,6 +61,7 @@ public fun new<T>(
     title: String,
     min_ticket_count: u64,
     reward_coin: Coin<T>,
+    nft_types: vector<TypeName>,
     ctx: &mut TxContext
 ): (Raffle<T>, RaffleAdminCap) {
     let raffle = Raffle {
@@ -66,6 +71,7 @@ public fun new<T>(
         min_ticket_count,
         tickets: table_vec::empty(ctx),
         reward: reward_coin.into_balance(),
+        nft_types,
     };
 
     let raffle_admin_cap = RaffleAdminCap {
@@ -80,14 +86,20 @@ public fun join<Currency>(
     self: &mut Raffle<Currency>,
     ctx: &mut TxContext
 ): RaffleTicket {
-    match (self.state) {
-        RaffleState::Active => {
-            let ticket = raffle_ticket::new(&mut self.id, ctx);
-            self.tickets.push_back(ticket.id());
-            ticket
-        },
-        _ => abort EInvalidState,
-    }
+    assert!(self.nft_types.length() == 0, EInvalidNftOwnCondition);
+    join_internal(self, ctx)
+}
+
+public fun join_with_nft<Currency, Nft: key + store>(
+    self: &mut Raffle<Currency>,
+    _: &Nft,
+    ctx: &mut TxContext
+): RaffleTicket {
+    assert!(self.nft_types.length() > 0, EInvalidNftOwnCondition);
+    let nft_type = type_name::with_defining_ids<Nft>();
+    assert!(self.nft_types.contains(&nft_type), EInvalidNftType);
+
+    join_internal(self, ctx)
 }
 
 public fun claim_reward<Currency>(
@@ -139,4 +151,20 @@ entry fun select_winner<Currency>(
 
 public fun share<Currency>(self: Raffle<Currency>) {
     transfer::share_object(self);
+}
+
+// === Private Functions ===
+
+fun join_internal<Currency>(
+    self: &mut Raffle<Currency>,
+    ctx: &mut TxContext
+): RaffleTicket {
+    match (self.state) {
+        RaffleState::Active => {
+            let ticket = raffle_ticket::new(&mut self.id, ctx);
+            self.tickets.push_back(ticket.id());
+            ticket
+        },
+        _ => abort EInvalidState,
+    }
 }
