@@ -48,6 +48,11 @@ public struct RaffleAdminCap has key, store {
     raffle_id: ID
 }
 
+public struct ClaimKeyWithNft has copy, drop, store {
+    address: address,
+    type_name: TypeName,
+}
+
 // === Events ===
 
 public struct RaffleTicketSelectedEvent has copy, drop {
@@ -87,7 +92,7 @@ public fun join<Currency>(
     ctx: &mut TxContext
 ): RaffleTicket {
     assert!(self.nft_types.length() == 0, EInvalidNftOwnCondition);
-    join_internal(self, ctx)
+    join_internal(self, ctx.sender())
 }
 
 public fun join_with_nft<Currency, Nft: key + store>(
@@ -99,7 +104,10 @@ public fun join_with_nft<Currency, Nft: key + store>(
     let nft_type = type_name::with_defining_ids<Nft>();
     assert!(self.nft_types.contains(&nft_type), EInvalidNftType);
 
-    join_internal(self, ctx)
+    join_internal(self, ClaimKeyWithNft {
+        address: ctx.sender(),
+        type_name: nft_type,
+    })
 }
 
 public fun claim_reward<Currency>(
@@ -114,7 +122,7 @@ public fun claim_reward<Currency>(
 
             self.state = RaffleState::RewardClaimed(ctx.sender(), ticket.id(), clock.timestamp_ms());
             
-            ticket.destroy(ctx);
+            ticket.destroy();
             self.reward.withdraw_all().into_coin(ctx)
         },
         _ => abort EInvalidState,
@@ -155,13 +163,13 @@ public fun share<Currency>(self: Raffle<Currency>) {
 
 // === Private Functions ===
 
-fun join_internal<Currency>(
+fun join_internal<Currency, K: copy + drop + store>(
     self: &mut Raffle<Currency>,
-    ctx: &mut TxContext
+    claim_key: K,
 ): RaffleTicket {
     match (self.state) {
         RaffleState::Active => {
-            let ticket = raffle_ticket::new(&mut self.id, ctx);
+            let ticket = raffle_ticket::new(&mut self.id, claim_key);
             self.tickets.push_back(ticket.id());
             ticket
         },
