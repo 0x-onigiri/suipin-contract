@@ -3,10 +3,7 @@ module suipin::raffle_ticket;
 // === Imports ===
 
 use sui::{
-    balance::{Balance},
-    coin::{Coin},
     derived_object::{Self},
-    sui::SUI,
 };
 
 // === Structs ===
@@ -16,17 +13,17 @@ public struct RaffleTicket has key, store {
   raffle_id: ID,
 }
 
-public(package) fun new(
+public(package) fun new<K: copy + drop + store>(
   raffle_uid_mut: &mut UID,
-  ctx: &TxContext,
+  claim_key: K,
 ): RaffleTicket {
   RaffleTicket {
-    id: derived_object::claim(raffle_uid_mut, ctx.sender()),
+    id: derived_object::claim(raffle_uid_mut, claim_key),
     raffle_id: raffle_uid_mut.to_inner(),
   }
 }
 
-public fun destroy(self: RaffleTicket, ctx: &TxContext) {
+public fun destroy(self: RaffleTicket) {
     let RaffleTicket { id, raffle_id: _ } = self;
     id.delete();
 }
